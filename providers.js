@@ -1,29 +1,88 @@
-function finite(n){return Number.isFinite(Number(n))?Number(n):null}
-function quote(value,unit,timestamp,source){
-  if(finite(value)===null || !timestamp || !source) return null;
-  return {value:finite(value),unit,timestamp,source};
+function finite(n) {
+  return Number.isFinite(Number(n)) ? Number(n) : null;
 }
-async function fetchJSON(url,key){
-  if(!url) return null;
-  const c=new AbortController(),timer=setTimeout(()=>c.abort(),6000);
-  try{
-    const r=await fetch(url,{headers:key?{"Authorization":`Bearer ${key}`}:{},signal:c.signal});
-    if(!r.ok) throw new Error(`HTTP_${r.status}`);
-    return await r.json();
-  }finally{clearTimeout(timer)}
+
+function quote(value, unit, timestamp, source) {
+  const v = finite(value);
+  if (v === null || !timestamp || !source) return null;
+
+  const t = new Date(timestamp);
+  if (Number.isNaN(t.getTime())) return null;
+
+  return {
+    value: v,
+    unit,
+    timestamp: t.toISOString(),
+    source
+  };
 }
-/*
-IMPORTANT:
-Do not guess a provider's response fields.
-For each provider, map its documented response exactly here.
-The placeholder adapters intentionally return null until credentials + schema
-are configured. This prevents false prices.
-*/
-async function primaryOrNull(cfg,asset){
-  const url=cfg[asset+"PrimaryUrl"],key=cfg[asset+"PrimaryKey"];
-  if(!url) return null;
-  const d=await fetchJSON(url,key);
-  // TODO: map documented provider schema here.
-  return null;
+
+async function fetchJSON(url, key) {
+  if (!url || !key) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "X-API-Key": key,
+        "Accept": "application/json"
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP_${response.status}`);
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
-module.exports={quote,primaryOrNull};
+
+function servixQuote(data, unit, source) {
+  if (!data || typeof data !== "object") return null;
+
+  const value = finite(data.value);
+  const timestamp = data.businessTime;
+
+  if (value === null || !timestamp) return null;
+
+  return quote(value, unit, timestamp, source);
+}
+
+async function primaryOrNull(cfg, asset) {
+  const url = cfg[asset + "PrimaryUrl"];
+  const key = cfg[asset + "PrimaryKey"];
+
+  if (!url || !key) return null;
+
+  try {
+    const data = await fetchJSON(url, key);
+
+    if (asset === "gold") {
+      return servixQuote(data, "IRR", "Servix:GOLD_18_RLS");
+    }
+
+    if (asset === "fx") {
+      return servixQuote(data, "IRR", "Servix:USD_RLS");
+    }
+
+    if (asset === "crypto") {
+      return servixQuote(data, "IRR", "Servix:USDT");
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`Provider error (${asset}):`, error.message);
+    return null;
+  }
+}
+
+module.exports = {
+  quote,
+  primaryOrNull
+};
