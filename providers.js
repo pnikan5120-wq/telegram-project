@@ -38,10 +38,15 @@ async function fetchJSON(url, key) {
   }
 }
 
-function findAsset(data, codes) {
-  if (!Array.isArray(data)) return null;
+function items(data) {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object" && data.code) return [data];
+  if (data && Array.isArray(data.assets)) return data.assets;
+  return [];
+}
 
-  return data.find(x =>
+function findAsset(data, codes) {
+  return items(data).find(x =>
     x &&
     typeof x.code === "string" &&
     codes.includes(x.code)
@@ -86,10 +91,27 @@ async function primaryOrNull(cfg, asset) {
   }
 
   if (asset === "crypto") {
-    return mapAsset(
-      data,
-      ["USDT_RLS", "USDT_IRR"],
-      "IRR"
+    const usdt = findAsset(data, ["USDT_USD"]);
+    const usd = findAsset(data, ["USD_RLS"]);
+
+    if (!usdt || !usd) return null;
+
+    const usdtUsd = finite(usdt.value);
+    const usdRls = finite(usd.value);
+
+    if (usdtUsd === null || usdRls === null) return null;
+    if (!usdt.businessTime || !usd.businessTime) return null;
+
+    const timestamp =
+      new Date(usdt.businessTime) > new Date(usd.businessTime)
+        ? usdt.businessTime
+        : usd.businessTime;
+
+    return quote(
+      usdtUsd * usdRls,
+      "IRR",
+      timestamp,
+      "Servix-derived"
     );
   }
 
