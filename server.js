@@ -27,9 +27,9 @@ const cfg = {
   fxPrimaryKey: process.env.FX_PRIMARY_KEY || "",
   cryptoPrimaryKey: process.env.CRYPTO_PRIMARY_KEY || "",
 
-  maxAgeGold: Number(process.env.MAX_AGE_GOLD) || 180,
-  maxAgeFx: Number(process.env.MAX_AGE_FX) || 180,
-  maxAgeCrypto: Number(process.env.MAX_AGE_CRYPTO) || 120
+maxAgeGold: Number(process.env.MAX_AGE_GOLD) || 7200,
+maxAgeFx: Number(process.env.MAX_AGE_FX) || 7200,
+maxAgeCrypto: Number(process.env.MAX_AGE_CRYPTO) || 7200
 };
 
 function validate(initData) {
