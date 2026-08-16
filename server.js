@@ -3,7 +3,7 @@ const express=require("express"),crypto=require("crypto"),path=require("path");
 const {saveQuote,history,addAlert,getActiveAlerts}=require("./db");
 const {primaryOrNull}=require("./providers");
 const app=express();app.use(express.json({limit:"32kb"}));
-app.use(express.static(path.join(__dirname,"..","public")));
+app.use(express.static(path.join(__dirname,"public")));
 
 const cfg={
  port:+process.env.PORT||3000,botToken:process.env.BOT_TOKEN||"",
