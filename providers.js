@@ -34,13 +34,27 @@ async function fetchJSON(url, key) {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP_${response.status}`);
+      const body = await response.text().catch(() => "");
+      throw new Error(
+        `HTTP_${response.status}${body ? `: ${body.slice(0, 300)}` : ""}`
+      );
     }
 
     return await response.json();
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchAsset(baseUrl, key, code) {
+  if (!baseUrl || !key || !code) return null;
+
+  const url =
+    baseUrl.replace(/\/$/, "") +
+    "/" +
+    encodeURIComponent(code);
+
+  return fetchJSON(url, key);
 }
 
 function getAssets(data) {
@@ -146,7 +160,32 @@ async function primaryOrNull(cfg, asset) {
     return null;
   }
 
-  const data = await fetchJSON(url, key);
+  let data;
+
+  try {
+    data = await fetchJSON(url, key);
+  } catch (error) {
+    console.error(
+      `Servix request failed for ${asset}:`,
+      error.message
+    );
+  }
+
+  // Fall back to Servix's documented single-asset endpoint.
+  if (!data) {
+    try {
+      if (asset === "gold") {
+        data = await fetchAsset(baseUrl, key, "GOLD_18_RLS");
+      } else if (asset === "fx") {
+        data = await fetchAsset(baseUrl, key, "USD_RLS");
+      }
+    } catch (error) {
+      console.error(
+        `Servix single-asset request failed for ${asset}:`,
+        error.message
+      );
+    }
+  }
 
   if (!data) {
     return null;
@@ -175,9 +214,7 @@ async function primaryOrNull(cfg, asset) {
     const usd =
       findAsset(data, "USD_RLS");
 
-    if (!usdt || !usd) {
-      return null;
-    }
+    if (!usdt || !usd) return null;
 
     const usdtUsd =
       finite(usdt.value);
