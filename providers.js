@@ -44,7 +44,9 @@ async function fetchJSON(url, key) {
 }
 
 function getAssets(data) {
-  if (Array.isArray(data)) return data;
+  if (Array.isArray(data)) {
+    return data;
+  }
 
   if (data && Array.isArray(data.assets)) {
     return data.assets;
@@ -67,7 +69,9 @@ function findAsset(data, code) {
 function mapAsset(data, code, unit) {
   const item = findAsset(data, code);
 
-  if (!item) return null;
+  if (!item) {
+    return null;
+  }
 
   return quote(
     item.value,
@@ -80,88 +84,59 @@ function mapAsset(data, code, unit) {
 async function primaryOrNull(cfg, asset) {
   const key = cfg[asset + "PrimaryKey"];
 
-  if (!key) return null;
+  if (!key) {
+    return null;
+  }
 
-  let codes;
+  let code;
 
   if (asset === "gold") {
-    codes = [
-      "GOLD_18_RLS",
-      "GOLD_MESGHAL_RLS"
-    ];
+    code = "GOLD_18_RLS";
   } else if (asset === "fx") {
-    codes = [
-      "USD_RLS"
-    ];
+    code = "USD_RLS";
   } else if (asset === "crypto") {
-    codes = [
-      "USDT_USD",
-      "USD_RLS"
-    ];
+    code = "USDT_USD";
   } else {
     return null;
   }
 
+  /*
+    Servix documented single-asset endpoint:
+    GET /api/v1/assets/{assetName}
+  */
   const url =
-    "https://servix.cc/api/v1/assets?codes=" +
-    encodeURIComponent(codes.join(","));
+    "https://servix.cc/api/v1/assets/" +
+    encodeURIComponent(code);
 
   const data = await fetchJSON(url, key);
 
   if (asset === "gold") {
-    return mapAsset(data, "GOLD_18_RLS", "IRR");
+    return mapAsset(
+      data,
+      "GOLD_18_RLS",
+      "IRR"
+    );
   }
 
   if (asset === "fx") {
-    return mapAsset(data, "USD_RLS", "IRR");
+    return mapAsset(
+      data,
+      "USD_RLS",
+      "IRR"
+    );
   }
 
+  /*
+    USDT_USD alone is a USD-denominated price.
+    We do NOT convert it to IRR here because
+    that would require a second USD_RLS quote
+    with compatible businessTime.
+  */
   if (asset === "crypto") {
-    const usdt = findAsset(data, "USDT_USD");
-    const usd = findAsset(data, "USD_RLS");
-
-    if (!usdt || !usd) return null;
-
-    const usdtUsd = finite(usdt.value);
-    const usdRls = finite(usd.value);
-
-    if (usdtUsd === null || usdRls === null) {
-      return null;
-    }
-
-    if (!usdt.businessTime || !usd.businessTime) {
-      return null;
-    }
-
-    const usdtTime =
-      new Date(usdt.businessTime).getTime();
-
-    const usdTime =
-      new Date(usd.businessTime).getTime();
-
-    if (
-      !Number.isFinite(usdtTime) ||
-      !Number.isFinite(usdTime)
-    ) {
-      return null;
-    }
-
-    const ageDifference =
-      Math.abs(usdtTime - usdTime);
-
-    // Do not derive a price from significantly
-    // different market timestamps.
-    if (ageDifference > 5 * 60 * 1000) {
-      return null;
-    }
-
-    return quote(
-      usdtUsd * usdRls,
-      "IRR",
-      new Date(
-        Math.max(usdtTime, usdTime)
-      ).toISOString(),
-      "Servix-derived"
+    return mapAsset(
+      data,
+      "USDT_USD",
+      "USD"
     );
   }
 
