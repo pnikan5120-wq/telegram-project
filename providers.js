@@ -5,7 +5,10 @@ function finite(n) {
 
 function quote(value, unit, timestamp, source) {
   const v = finite(value);
-  if (v === null || !timestamp || !source) return null;
+
+  if (v === null || !timestamp || !source) {
+    return null;
+  }
 
   return {
     value: v,
@@ -22,7 +25,7 @@ async function fetchJSON(url, key) {
   const timer = setTimeout(() => controller.abort(), 6000);
 
   try {
-    const r = await fetch(url, {
+    const response = await fetch(url, {
       headers: {
         "X-API-Key": key,
         "Accept": "application/json"
@@ -30,31 +33,39 @@ async function fetchJSON(url, key) {
       signal: controller.signal
     });
 
-    if (!r.ok) throw new Error(`HTTP_${r.status}`);
+    if (!response.ok) {
+      throw new Error(`HTTP_${response.status}`);
+    }
 
-    return await r.json();
+    return await response.json();
   } finally {
     clearTimeout(timer);
   }
 }
 
-function items(data) {
+function getAssets(data) {
   if (Array.isArray(data)) return data;
-  if (data && typeof data === "object" && data.code) return [data];
-  if (data && Array.isArray(data.assets)) return data.assets;
+
+  if (data && Array.isArray(data.assets)) {
+    return data.assets;
+  }
+
+  if (data && typeof data.code === "string") {
+    return [data];
+  }
+
   return [];
 }
 
-function findAsset(data, codes) {
-  return items(data).find(x =>
-    x &&
-    typeof x.code === "string" &&
-    codes.includes(x.code)
+function findAsset(data, code) {
+  return getAssets(data).find(item =>
+    item &&
+    item.code === code
   ) || null;
 }
 
-function mapAsset(data, codes, unit) {
-  const item = findAsset(data, codes);
+function mapAsset(data, code, unit) {
+  const item = findAsset(data, code);
 
   if (!item) return null;
 
@@ -67,32 +78,39 @@ function mapAsset(data, codes, unit) {
 }
 
 async function primaryOrNull(cfg, asset) {
-  const url = cfg[asset + "PrimaryUrl"];
   const key = cfg[asset + "PrimaryKey"];
 
-  if (!url || !key) return null;
+  if (!key) return null;
+
+  let codes;
+
+  if (asset === "gold") {
+    codes = "GOLD_18_RLS,GOLD_MESGHAL_RLS";
+  } else if (asset === "fx") {
+    codes = "USD_RLS";
+  } else if (asset === "crypto") {
+    codes = "USDT_USD,USD_RLS";
+  } else {
+    return null;
+  }
+
+  const url =
+    "https://servix.cc/api/v1/assets?codes=" +
+    encodeURIComponent(codes);
 
   const data = await fetchJSON(url, key);
 
   if (asset === "gold") {
-    return mapAsset(
-      data,
-      ["GOLD_18_RLS"],
-      "IRR"
-    );
+    return mapAsset(data, "GOLD_18_RLS", "IRR");
   }
 
   if (asset === "fx") {
-    return mapAsset(
-      data,
-      ["USD_RLS"],
-      "IRR"
-    );
+    return mapAsset(data, "USD_RLS", "IRR");
   }
 
   if (asset === "crypto") {
-    const usdt = findAsset(data, ["USDT_USD"]);
-    const usd = findAsset(data, ["USD_RLS"]);
+    const usdt = findAsset(data, "USDT_USD");
+    const usd = findAsset(data, "USD_RLS");
 
     if (!usdt || !usd) return null;
 
@@ -100,17 +118,25 @@ async function primaryOrNull(cfg, asset) {
     const usdRls = finite(usd.value);
 
     if (usdtUsd === null || usdRls === null) return null;
-    if (!usdt.businessTime || !usd.businessTime) return null;
 
-    const timestamp =
-      new Date(usdt.businessTime) > new Date(usd.businessTime)
-        ? usdt.businessTime
-        : usd.businessTime;
+    if (!usdt.businessTime || !usd.businessTime) {
+      return null;
+    }
+
+    const usdtTime = new Date(usdt.businessTime).getTime();
+    const usdTime = new Date(usd.businessTime).getTime();
+
+    if (!Number.isFinite(usdtTime) || !Number.isFinite(usdTime)) {
+      return null;
+    }
+
+    const latestTime =
+      Math.max(usdtTime, usdTime);
 
     return quote(
       usdtUsd * usdRls,
       "IRR",
-      timestamp,
+      new Date(latestTime).toISOString(),
       "Servix-derived"
     );
   }
