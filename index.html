@@ -1,0 +1,9 @@
+<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>نبض بازار</title><script src="https://telegram.org/js/telegram-web-app.js"></script><link rel="stylesheet" href="style.css"></head>
+<body><main><header><div class="logo">🟡 نبض بازار<small>داده معتبر یا هیچ داده‌ای</small></div><button id="refresh">↻</button></header>
+<div class="status"><b id="state">در حال بررسی…</b><span id="serverTime"></span></div>
+<div id="quotes" class="grid"></div>
+<section class="card"><h3>📈 تاریخچه</h3><select id="histAsset"><option value="gold18">طلا</option><option value="usd">دلار</option><option value="usdt">تتر</option></select><button id="historyBtn">نمایش</button><div id="history"></div></section>
+<section class="card"><h3>🧮 محاسبه طلا</h3><input id="weight" type="number" step=".01" placeholder="وزن (گرم)"><button id="calc">محاسبه</button><p id="calcOut"></p></section>
+<section class="card"><h3>🔔 هشدار</h3><select id="asset"><option value="gold18">طلای ۱۸ عیار</option><option value="usd">دلار</option><option value="usdt">تتر</option></select><select id="direction"><option value="above">وقتی به بالای قیمت رسید</option><option value="below">وقتی به زیر قیمت رسید</option></select><input id="target" type="number" placeholder="قیمت"><button id="save">ثبت هشدار</button><p id="alertOut"></p></section>
+<footer>این برنامه عدد را حدس نمی‌زند؛ داده تأییدنشده نمایش داده نمی‌شود.</footer></main><script src="app.js"></script></body></html>
