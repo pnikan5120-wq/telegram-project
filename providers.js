@@ -1,18 +1,16 @@
 function finite(n) {
-  return Number.isFinite(Number(n)) ? Number(n) : null;
+  const v = Number(n);
+  return Number.isFinite(v) ? v : null;
 }
 
 function quote(value, unit, timestamp, source) {
   const v = finite(value);
   if (v === null || !timestamp || !source) return null;
 
-  const t = new Date(timestamp);
-  if (Number.isNaN(t.getTime())) return null;
-
   return {
     value: v,
     unit,
-    timestamp: t.toISOString(),
+    timestamp,
     source
   };
 }
@@ -24,8 +22,7 @@ async function fetchJSON(url, key) {
   const timer = setTimeout(() => controller.abort(), 6000);
 
   try {
-    const response = await fetch(url, {
-      method: "GET",
+    const r = await fetch(url, {
       headers: {
         "X-API-Key": key,
         "Accept": "application/json"
@@ -33,25 +30,35 @@ async function fetchJSON(url, key) {
       signal: controller.signal
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP_${response.status}`);
-    }
+    if (!r.ok) throw new Error(`HTTP_${r.status}`);
 
-    return await response.json();
+    return await r.json();
   } finally {
     clearTimeout(timer);
   }
 }
 
-function servixQuote(data, unit, source) {
-  if (!data || typeof data !== "object") return null;
+function findAsset(data, codes) {
+  if (!Array.isArray(data)) return null;
 
-  const value = finite(data.value);
-  const timestamp = data.businessTime;
+  return data.find(x =>
+    x &&
+    typeof x.code === "string" &&
+    codes.includes(x.code)
+  ) || null;
+}
 
-  if (value === null || !timestamp) return null;
+function mapAsset(data, codes, unit) {
+  const item = findAsset(data, codes);
 
-  return quote(value, unit, timestamp, source);
+  if (!item) return null;
+
+  return quote(
+    item.value,
+    unit,
+    item.businessTime,
+    "Servix"
+  );
 }
 
 async function primaryOrNull(cfg, asset) {
@@ -60,26 +67,33 @@ async function primaryOrNull(cfg, asset) {
 
   if (!url || !key) return null;
 
-  try {
-    const data = await fetchJSON(url, key);
+  const data = await fetchJSON(url, key);
 
-    if (asset === "gold") {
-      return servixQuote(data, "IRR", "Servix:GOLD_18_RLS");
-    }
-
-    if (asset === "fx") {
-      return servixQuote(data, "IRR", "Servix:USD_RLS");
-    }
-
-    if (asset === "crypto") {
-      return servixQuote(data, "IRR", "Servix:USDT");
-    }
-
-    return null;
-  } catch (error) {
-    console.error(`Provider error (${asset}):`, error.message);
-    return null;
+  if (asset === "gold") {
+    return mapAsset(
+      data,
+      ["GOLD_18_RLS"],
+      "IRR"
+    );
   }
+
+  if (asset === "fx") {
+    return mapAsset(
+      data,
+      ["USD_RLS"],
+      "IRR"
+    );
+  }
+
+  if (asset === "crypto") {
+    return mapAsset(
+      data,
+      ["USDT_RLS", "USDT_IRR"],
+      "IRR"
+    );
+  }
+
+  return null;
 }
 
 module.exports = {
