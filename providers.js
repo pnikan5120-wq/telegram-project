@@ -85,18 +85,26 @@ async function primaryOrNull(cfg, asset) {
   let codes;
 
   if (asset === "gold") {
-    codes = "GOLD_18_RLS,GOLD_MESGHAL_RLS";
+    codes = [
+      "GOLD_18_RLS",
+      "GOLD_MESGHAL_RLS"
+    ];
   } else if (asset === "fx") {
-    codes = "USD_RLS";
+    codes = [
+      "USD_RLS"
+    ];
   } else if (asset === "crypto") {
-    codes = "USDT_USD,USD_RLS";
+    codes = [
+      "USDT_USD",
+      "USD_RLS"
+    ];
   } else {
     return null;
   }
 
   const url =
     "https://servix.cc/api/v1/assets?codes=" +
-    encodeURIComponent(codes);
+    encodeURIComponent(codes.join(","));
 
   const data = await fetchJSON(url, key);
 
@@ -117,26 +125,42 @@ async function primaryOrNull(cfg, asset) {
     const usdtUsd = finite(usdt.value);
     const usdRls = finite(usd.value);
 
-    if (usdtUsd === null || usdRls === null) return null;
+    if (usdtUsd === null || usdRls === null) {
+      return null;
+    }
 
     if (!usdt.businessTime || !usd.businessTime) {
       return null;
     }
 
-    const usdtTime = new Date(usdt.businessTime).getTime();
-    const usdTime = new Date(usd.businessTime).getTime();
+    const usdtTime =
+      new Date(usdt.businessTime).getTime();
 
-    if (!Number.isFinite(usdtTime) || !Number.isFinite(usdTime)) {
+    const usdTime =
+      new Date(usd.businessTime).getTime();
+
+    if (
+      !Number.isFinite(usdtTime) ||
+      !Number.isFinite(usdTime)
+    ) {
       return null;
     }
 
-    const latestTime =
-      Math.max(usdtTime, usdTime);
+    const ageDifference =
+      Math.abs(usdtTime - usdTime);
+
+    // Do not derive a price from significantly
+    // different market timestamps.
+    if (ageDifference > 5 * 60 * 1000) {
+      return null;
+    }
 
     return quote(
       usdtUsd * usdRls,
       "IRR",
-      new Date(latestTime).toISOString(),
+      new Date(
+        Math.max(usdtTime, usdTime)
+      ).toISOString(),
       "Servix-derived"
     );
   }
