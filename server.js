@@ -5,6 +5,7 @@ const crypto = require("crypto");
 
 const {
   saveQuote,
+  lastQuote,
   history,
   addAlert
 } = require("./db");
@@ -27,15 +28,21 @@ const cfg = {
   fxPrimaryKey: process.env.FX_PRIMARY_KEY || "",
   cryptoPrimaryKey: process.env.CRYPTO_PRIMARY_KEY || "",
 
-maxAgeGold: Number(process.env.MAX_AGE_GOLD) || 7200,
-maxAgeFx: Number(process.env.MAX_AGE_FX) || 7200,
-maxAgeCrypto: Number(process.env.MAX_AGE_CRYPTO) || 7200
+  maxAgeGold: Number(process.env.MAX_AGE_GOLD) || 7200,
+  maxAgeFx: Number(process.env.MAX_AGE_FX) || 7200,
+  maxAgeCrypto: Number(process.env.MAX_AGE_CRYPTO) || 7200
 };
+
+/*
+  تاریخچه هر ۱۵ دقیقه یک بار ذخیره می‌شود.
+*/
+const HISTORY_INTERVAL = 15 * 60 * 1000;
 
 function validate(initData) {
   if (!initData || !cfg.botToken) return false;
 
   const p = new URLSearchParams(initData);
+
   const hash = p.get("hash");
   const auth = Number(p.get("auth_date"));
 
@@ -70,16 +77,6 @@ function validate(initData) {
   );
 }
 
-/*
-  Strict freshness validation.
-
-  A quote is valid only when:
-  1. value is numeric
-  2. timestamp exists
-  3. timestamp is a valid date
-  4. timestamp is not too old
-  5. timestamp is not materially in the future
-*/
 function isFreshQuote(q, maxAgeSeconds) {
   if (!q) return false;
 
@@ -101,12 +98,6 @@ function isFreshQuote(q, maxAgeSeconds) {
 
   const now = Date.now();
 
-  /*
-    Reject timestamps more than 60 seconds
-    in the future. This protects against bad
-    provider clocks without rejecting tiny
-    clock differences.
-  */
   if (timestamp > now + 60 * 1000) {
     return false;
   }
@@ -143,10 +134,6 @@ async function getAsset(asset) {
 
   const hit = cache.get(asset);
 
-  /*
-    Never return a cached quote unless it is
-    still fresh according to its provider timestamp.
-  */
   if (
     hit &&
     Date.now() - hit.time < 5000 &&
@@ -174,20 +161,45 @@ async function getAsset(asset) {
       `Provider error for ${asset}:`,
       error.message
     );
+
     return null;
   }
 
   /*
-    Fail closed:
-    invalid or stale data is NEVER displayed
-    and NEVER saved as a valid quote.
+    داده نامعتبر یا قدیمی:
+    نه نمایش داده می‌شود
+    نه ذخیره می‌شود.
   */
   if (!isFreshQuote(q, maxAge)) {
     cache.delete(asset);
     return null;
   }
 
-  saveQuote(asset, q);
+  /*
+    فقط هر ۱۵ دقیقه یک رکورد جدید ذخیره می‌کنیم.
+  */
+  const previous = lastQuote(asset);
+
+  let shouldSave = true;
+
+  if (previous?.ts) {
+    const previousTime = new Date(previous.ts).getTime();
+
+    if (
+      Number.isFinite(previousTime) &&
+      Date.now() - previousTime < HISTORY_INTERVAL
+    ) {
+      shouldSave = false;
+    }
+  }
+
+  if (shouldSave) {
+    saveQuote(asset, q);
+
+    console.log(
+      `History saved: ${asset} ${q.value}`
+    );
+  }
 
   cache.set(asset, {
     q,
@@ -213,8 +225,7 @@ app.get("/api/market", async (req, res) => {
   }
 
   /*
-    Mesghal is derived from the validated 18K quote.
-    It is only shown when the source quote is valid.
+    مثقال از طلای ۱۸ عیار معتبر محاسبه می‌شود.
   */
   if (out.quotes.gold18) {
     out.quotes.mesghal = {
@@ -232,21 +243,33 @@ app.get("/api/market", async (req, res) => {
     };
   }
 
-  /*
-    Four values are required for LIVE:
-    gold18 + mesghal + usd + usdt
-  */
   out.status =
     Object.keys(out.quotes).length >= 4
       ? "LIVE"
       : "PARTIAL";
 
-  res.set("Cache-Control", "no-store");
+  res.set(
+    "Cache-Control",
+    "no-store"
+  );
 
   res.json(out);
 });
 
 app.get("/api/history/:asset", (req, res) => {
+  const allowed = [
+    "gold18",
+    "usd",
+    "usdt"
+  ];
+
+  if (!allowed.includes(req.params.asset)) {
+    return res.status(400).json({
+      ok: false,
+      error: "invalid_asset"
+    });
+  }
+
   res.json(
     history(req.params.asset, 200)
   );
@@ -315,8 +338,10 @@ app.get("/health", (req, res) => {
 
 app.listen(
   cfg.port,
-  () => console.log(
-    "Nebze Bazar v5 on",
-    cfg.port
-  )
+  () => {
+    console.log(
+      "Nebze Bazar v5 on",
+      cfg.port
+    );
+  }
 );
